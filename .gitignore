@@ -1,0 +1,18 @@
+@"
+node_modules/
+**/node_modules/
+
+.env
+.env.*
+!.env.example
+
+dist/
+**/dist/
+build/
+coverage/
+
+backend/uploads/
+
+*.log
+.DS_Store
+"@ | Set-Content -Path .gitignore

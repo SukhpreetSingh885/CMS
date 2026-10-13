@@ -1,0 +1,770 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum ClientStatus {
+  LEAD
+  WON
+  ONBOARDING
+  ACTIVE
+  RENEWAL_DUE
+  RENEWED
+  PAUSED
+  COMPLETED
+  CHURNED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  CREATED
+  ASSIGNED
+  IN_PROGRESS
+  INTERNAL_REVIEW
+  CLIENT_APPROVAL
+  REVISION_REQUIRED
+  APPROVED
+  DELIVERED
+  COMPLETED
+}
+
+enum ReportStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REVISION_REQUESTED
+}
+
+enum ContentPlatform {
+  INSTAGRAM
+  FACEBOOK
+  YOUTUBE
+  LINKEDIN
+  TWITTER
+  TIKTOK
+  WEBSITE
+  OTHER
+}
+
+enum ContentType {
+  REEL
+  POST
+  STORY
+  CAROUSEL
+  VIDEO
+  BLOG
+  BANNER
+}
+
+enum ContentStage {
+  IDEA
+  SCRIPT
+  SHOOT
+  EDITING
+  INTERNAL_REVIEW
+  CLIENT_APPROVAL
+  SCHEDULED
+  PUBLISHED
+}
+
+enum CommunicationType {
+  WHATSAPP
+  EMAIL
+  PHONE
+  MEETING
+  OTHER
+}
+
+enum FileFolder {
+  GENERAL
+  CONTRACTS
+  CREATIVES
+  INVOICES
+  REPORTS
+  DELIVERABLES
+}
+
+enum PaymentStatus {
+  NOT_DUE
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+  VOID
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  UPI
+  CREDIT_CARD
+  CASH
+  CHEQUE
+  OTHER
+}
+
+enum RenewalStatus {
+  UPCOMING
+  DUE
+  RENEWED
+  CHURNED
+}
+
+enum NotificationType {
+  TASK
+  REPORT
+  CLIENT
+  FINANCE
+  RENEWAL
+  SYSTEM
+}
+
+enum BillingCycle {
+  ONE_TIME
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  ANNUALLY
+}
+
+enum PackageType {
+  SINGLE_SERVICE
+  COMBINED_BUSINESS
+}
+
+enum DeliverableType {
+  QUANTITY
+  FEATURE
+  MILESTONE
+}
+
+enum DeliverablePeriod {
+  ONE_TIME
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  CAMPAIGN_SCOPE
+  MILESTONE_BASED
+}
+
+model User {
+  id               String      @id @default(cuid())
+  email            String      @unique
+  password         String
+  fullName         String
+  role             Role
+  phone            String?
+  employeeId       String?     @unique
+  department       String?
+  designation      String?
+  joiningDate      DateTime?
+  status           UserStatus  @default(ACTIVE)
+  avatarUrl        String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  createdById      String?
+
+  // Relations
+  sessions                  Session[]
+  clientsAssignedAsAdmin    Client[]                    @relation("ClientAssignedAdmin")
+  clientAssignments         ClientAssignedEmployee[]
+  clientServicesAssigned    ClientService[]             @relation("ServiceAssignedEmployee")
+  clientServiceTeamAssignments ClientServiceEmployeeAssignment[] @relation("ClientServiceTeamMember")
+  clientServicesAssignedBy  ClientServiceEmployeeAssignment[] @relation("ClientServiceAssignedBy")
+  tasksAssigned             Task[]                      @relation("TaskAssignedTo")
+  tasksCreated              Task[]                      @relation("TaskAssignedBy")
+  tasksReviewed             Task[]                      @relation("TaskReviewer")
+  tasksStarted              Task[]                      @relation("TaskStartedBy")
+  taskComments              TaskComment[]
+  taskAttachments           TaskAttachment[]
+  dailyReportsSubmitted     DailyWorkReport[]           @relation("ReportSubmittedBy")
+  dailyReportsReviewed      DailyWorkReport[]           @relation("ReportReviewedBy")
+  contentItemsAssigned      ContentItem[]               @relation("ContentAssignedEmployee")
+  meetingsCreated           Meeting[]                   @relation("MeetingCreatedBy")
+  meetingParticipations     MeetingParticipant[]
+  communicationLogs         CommunicationLog[]          @relation("CommunicationLoggedBy")
+  uploadedFiles             ClientFile[]                @relation("FileUploadedBy")
+  paymentsReceived          Payment[]                   @relation("PaymentReceivedBy")
+  notifications             Notification[]
+  auditLogs                 AuditLog[]                  @relation("AuditActor")
+
+  @@index([role, status])
+  @@index([email])
+}
+
+model Session {
+  id           String    @id @default(cuid())
+  userId       String
+  refreshToken String    @db.VarChar(500)
+  expiresAt    DateTime
+  revoked      Boolean   @default(false)
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshToken])
+}
+
+model Client {
+  id                 String        @id @default(cuid())
+  companyName        String
+  contactPerson      String
+  contactDesignation String?
+  mobileNumber       String
+  whatsAppNumber     String?
+  email              String
+  website            String?
+  instagram          String?
+  facebook           String?
+  linkedIn           String?
+  address            String?       @db.Text
+  city               String?
+  industry           String?
+  leadSource         String?
+  onboardingDate     DateTime      @default(now())
+  contractStartDate  DateTime
+  contractEndDate    DateTime
+  renewalDate        DateTime
+  assignedAdminId    String?
+  packageId          String?
+  packagePricing     Decimal       @default(0.00) @db.Decimal(12, 2)
+  billingCycle       BillingCycle  @default(MONTHLY)
+  clientPriority     Priority      @default(MEDIUM)
+  clientGoals        String?       @db.Text
+  contractSnapshot   Json?
+  status             ClientStatus  @default(ONBOARDING)
+  isArchived         Boolean       @default(false)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  createdById        String?
+
+  assignedAdmin      User?                      @relation("ClientAssignedAdmin", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  package            Package?                   @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  assignedEmployees  ClientAssignedEmployee[]
+  services           ClientService[]
+  tasks              Task[]
+  dailyReports       DailyWorkReport[]
+  contentItems       ContentItem[]
+  meetings           Meeting[]
+  communications     CommunicationLog[]
+  files              ClientFile[]
+  invoices           Invoice[]
+  payments           Payment[]
+  renewals           Renewal[]
+
+  @@index([status, isArchived])
+  @@index([assignedAdminId])
+}
+
+model ClientAssignedEmployee {
+  id          String   @id @default(cuid())
+  clientId    String
+  userId      String
+  primaryRole String?
+  assignedAt  DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, userId])
+  @@index([clientId])
+  @@index([userId])
+}
+
+model Package {
+  id           String       @id @default(cuid())
+  name         String       @unique
+  packageType  PackageType  @default(SINGLE_SERVICE)
+  description  String?      @db.Text
+  basePrice    Decimal      @default(0.00) @db.Decimal(12, 2)
+  billingCycle BillingCycle @default(MONTHLY)
+  setupFee     Decimal      @default(0.00) @db.Decimal(12, 2)
+  features     Json?
+  isActive     Boolean      @default(true)
+  isArchived   Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  clients         Client[]
+  packageServices PackageService[]
+}
+
+model Service {
+  id                   String   @id @default(cuid())
+  name                 String   @unique
+  description          String?  @db.Text
+  defaultMonthlyTarget Int      @default(10)
+  icon                 String?
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  packageServices PackageService[]
+  clientServices  ClientService[]
+  tasks           Task[]
+  dailyReports    DailyWorkReport[]
+}
+
+model PackageService {
+  id            String  @id @default(cuid())
+  packageId     String
+  serviceId     String
+  monthlyTarget Int     @default(10)
+  defaultWeight Decimal @default(1.00) @db.Decimal(4, 2)
+  deliverables  String? @db.Text
+
+  package          Package              @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  service          Service              @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  deliverablesList PackageDeliverable[]
+
+  @@unique([packageId, serviceId])
+  @@index([packageId])
+  @@index([serviceId])
+}
+
+model PackageDeliverable {
+  id               String            @id @default(cuid())
+  packageServiceId String
+  name             String
+  deliverableType  DeliverableType   @default(QUANTITY)
+  quantity         Int?              @default(1)
+  unit             String?           @default("Units")
+  targetPeriod     DeliverablePeriod @default(MONTHLY)
+  isIncluded       Boolean           @default(true)
+  description      String?           @db.Text
+  sortOrder        Int               @default(0)
+
+  packageService PackageService @relation(fields: [packageServiceId], references: [id], onDelete: Cascade)
+
+  @@index([packageServiceId])
+}
+
+model ClientService {
+  id                    String   @id @default(cuid())
+  clientId              String
+  serviceId             String
+  assignedEmployeeId    String?
+  monthlyTarget         Int      @default(10)
+  completedDeliverables Int      @default(0)
+  serviceWeight         Decimal  @default(1.00) @db.Decimal(4, 2)
+  deliverables          String?  @db.Text
+  deliverablesConfig    Json?
+  status                String   @default("ACTIVE")
+  notes                 String?  @db.Text
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  client           Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  service          Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  assignedEmployee User?   @relation("ServiceAssignedEmployee", fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
+  assignedEmployees ClientServiceEmployeeAssignment[]
+
+  @@unique([clientId, serviceId])
+  @@index([clientId])
+  @@index([serviceId])
+  @@index([assignedEmployeeId])
+}
+
+model ClientServiceEmployeeAssignment {
+  id              String        @id @default(cuid())
+  clientServiceId String
+  employeeId      String
+  assignedById    String?
+  assignedAt      DateTime      @default(now())
+  isActive        Boolean       @default(true)
+
+  clientService   ClientService @relation(fields: [clientServiceId], references: [id], onDelete: Cascade)
+  employee        User          @relation("ClientServiceTeamMember", fields: [employeeId], references: [id], onDelete: Cascade)
+  assignedBy      User?         @relation("ClientServiceAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@unique([clientServiceId, employeeId])
+  @@index([clientServiceId])
+  @@index([employeeId])
+}
+
+model Task {
+  id                     String     @id @default(cuid())
+  title                  String
+  description            String?    @db.Text
+  clientId               String
+  serviceId              String?
+  assignedToId           String
+  assignedById           String
+  reviewerId             String?
+  priority               Priority   @default(MEDIUM)
+  startDate              DateTime?
+  startedAt              DateTime?
+  startedById            String?
+  dueDate                DateTime
+  estimatedHours         Decimal    @default(0.00) @db.Decimal(6, 2)
+  actualHours            Decimal    @default(0.00) @db.Decimal(6, 2)
+  status                 TaskStatus @default(CREATED)
+  completionPercentage   Int        @default(0)
+  deliverableCount       Int        @default(0)
+  clientApprovalRequired Boolean    @default(false)
+  isSelfReviewed         Boolean    @default(false)
+  internalNotes          String?    @db.Text
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+
+  client       Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  service      Service?          @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  assignedTo   User              @relation("TaskAssignedTo", fields: [assignedToId], references: [id], onDelete: Cascade)
+  assignedBy   User              @relation("TaskAssignedBy", fields: [assignedById], references: [id], onDelete: Cascade)
+  reviewer     User?             @relation("TaskReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  startedBy    User?             @relation("TaskStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
+  comments     TaskComment[]
+  attachments  TaskAttachment[]
+  dailyReports DailyWorkReport[]
+
+  @@index([clientId])
+  @@index([assignedToId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+model TaskComment {
+  id         String   @id @default(cuid())
+  taskId     String
+  userId     String
+  content    String   @db.Text
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([userId])
+}
+
+model TaskAttachment {
+  id           String   @id @default(cuid())
+  taskId       String
+  fileName     String
+  fileUrl      String
+  fileType     String?
+  fileSize     Int?
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  task       Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  uploadedBy User @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+model DailyWorkReport {
+  id               String       @id @default(cuid())
+  reportDate       DateTime     @default(now())
+  submittedById    String
+  clientId         String
+  taskId           String?
+  serviceId        String?
+  workDescription  String       @db.Text
+  workCompleted    String       @db.Text
+  workPending      String?      @db.Text
+  hoursSpent       Decimal      @default(0.00) @db.Decimal(5, 2)
+  issuesOrBlockers String?      @db.Text
+  nextAction       String?      @db.Text
+  status           ReportStatus @default(DRAFT)
+  submittedAt      DateTime?
+  reviewerId       String?
+  reviewerComments String?      @db.Text
+  reviewedAt       DateTime?
+  isSelfReviewed   Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  submittedBy User                     @relation("ReportSubmittedBy", fields: [submittedById], references: [id], onDelete: Cascade)
+  reviewer    User?                    @relation("ReportReviewedBy", fields: [reviewerId], references: [id], onDelete: SetNull)
+  client      Client                   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  task        Task?                    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  service     Service?                 @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  attachments DailyReportAttachment[]
+  history     DailyReportHistory[]
+
+  @@index([submittedById])
+  @@index([clientId])
+  @@index([status])
+  @@index([reportDate])
+}
+
+model DailyReportAttachment {
+  id        String   @id @default(cuid())
+  reportId  String
+  fileName  String
+  fileUrl   String
+  fileType  String?
+  fileSize  Int?
+  createdAt DateTime @default(now())
+
+  report DailyWorkReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+}
+
+model DailyReportHistory {
+  id               String       @id @default(cuid())
+  reportId         String
+  version          Int          @default(1)
+  workDescription  String       @db.Text
+  workCompleted    String       @db.Text
+  workPending      String?      @db.Text
+  hoursSpent       Decimal      @default(0.00) @db.Decimal(5, 2)
+  status           ReportStatus
+  reviewerComments String?      @db.Text
+  modifiedAt       DateTime     @default(now())
+  modifiedById     String?
+
+  report DailyWorkReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+}
+
+model ContentItem {
+  id                 String          @id @default(cuid())
+  clientId           String
+  title              String
+  platform           ContentPlatform @default(INSTAGRAM)
+  contentType        ContentType     @default(REEL)
+  assignedEmployeeId String?
+  stage              ContentStage    @default(IDEA)
+  shootDate          DateTime?
+  editingDate        DateTime?
+  approvalDate       DateTime?
+  publishingDate     DateTime?
+  caption            String?         @db.Text
+  script             String?         @db.Text
+  attachmentUrl      String?
+  notes              String?         @db.Text
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  client           Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  assignedEmployee User?  @relation("ContentAssignedEmployee", fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([stage])
+  @@index([publishingDate])
+}
+
+model Meeting {
+  id              String    @id @default(cuid())
+  clientId        String
+  title           String
+  meetingDateTime DateTime
+  meetingLink     String?
+  agenda          String?   @db.Text
+  notes           String?   @db.Text
+  actionItems     String?   @db.Text
+  followUpDate    DateTime?
+  createdById     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  client       Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdBy    User                 @relation("MeetingCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  participants MeetingParticipant[]
+
+  @@index([clientId])
+  @@index([meetingDateTime])
+}
+
+model MeetingParticipant {
+  id        String @id @default(cuid())
+  meetingId String
+  userId    String
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@index([meetingId])
+  @@index([userId])
+}
+
+model CommunicationLog {
+  id                 String            @id @default(cuid())
+  clientId           String
+  loggedById         String
+  type               CommunicationType @default(PHONE)
+  date               DateTime          @default(now())
+  summary            String            @db.Text
+  clientRequirements String?           @db.Text
+  nextAction         String?           @db.Text
+  followUpDate       DateTime?
+  createdAt          DateTime          @default(now())
+
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  loggedBy User   @relation("CommunicationLoggedBy", fields: [loggedById], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([loggedById])
+}
+
+model ClientFile {
+  id           String     @id @default(cuid())
+  clientId     String
+  fileName     String
+  fileUrl      String
+  fileType     String?
+  fileSize     Int?
+  folder       FileFolder @default(GENERAL)
+  tags         String?
+  version      Int        @default(1)
+  uploadedById String
+  createdAt    DateTime   @default(now())
+
+  client     Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  uploadedBy User   @relation("FileUploadedBy", fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([folder])
+}
+
+model Invoice {
+  id               String        @id @default(cuid())
+  clientId         String
+  invoiceNumber    String        @unique
+  invoiceDate      DateTime      @default(now())
+  dueDate          DateTime
+  packageValue     Decimal       @default(0.00) @db.Decimal(12, 2)
+  invoiceAmount    Decimal       @default(0.00) @db.Decimal(12, 2)
+  amountPaid       Decimal       @default(0.00) @db.Decimal(12, 2)
+  remainingBalance Decimal       @default(0.00) @db.Decimal(12, 2)
+  paymentStatus    PaymentStatus @default(NOT_DUE)
+  notes            String?       @db.Text
+  isCancelled      Boolean       @default(false)
+  cancelReason     String?       @db.Text
+  cancelledAt      DateTime?
+  cancelledById    String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  client   Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  payments Payment[]
+
+  @@index([clientId])
+  @@index([paymentStatus])
+  @@index([dueDate])
+  @@index([isCancelled])
+}
+
+model Payment {
+  id                   String        @id @default(cuid())
+  invoiceId            String
+  clientId             String
+  amount               Decimal       @db.Decimal(12, 2)
+  paymentDate          DateTime      @default(now())
+  paymentMethod        PaymentMethod @default(BANK_TRANSFER)
+  transactionReference String?
+  receivedById         String
+  notes                String?       @db.Text
+  isVoided             Boolean       @default(false)
+  voidReason           String?       @db.Text
+  voidedAt             DateTime?
+  voidedById           String?
+  createdAt            DateTime      @default(now())
+
+  invoice    Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  client     Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  receivedBy User    @relation("PaymentReceivedBy", fields: [receivedById], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([clientId])
+  @@index([paymentDate])
+  @@index([isVoided])
+}
+
+model Renewal {
+  id                String        @id @default(cuid())
+  clientId          String
+  contractStartDate DateTime
+  contractEndDate   DateTime
+  renewalDate       DateTime
+  renewalAmount     Decimal       @default(0.00) @db.Decimal(12, 2)
+  renewalStatus     RenewalStatus @default(UPCOMING)
+  reminderSent30d   Boolean       @default(false)
+  reminderSent7d    Boolean       @default(false)
+  notes             String?       @db.Text
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([renewalDate])
+  @@index([renewalStatus])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  title     String
+  message   String           @db.Text
+  type      NotificationType @default(SYSTEM)
+  link      String?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorId      String?
+  actorName    String?
+  actorEmail   String?
+  action       String
+  resourceType String
+  resourceId   String?
+  beforeState  String?  @db.LongText
+  afterState   String?  @db.LongText
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([resourceType, resourceId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model SystemSetting {
+  id           String   @id @default(cuid())
+  settingKey   String   @unique
+  settingValue String   @db.Text
+  description  String?
+  updatedAt    DateTime @updatedAt
+}
+
