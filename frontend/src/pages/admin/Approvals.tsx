@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { contentAndApprovalService, dailyReportService, taskService, clientService, userService } from '../../services';
+import { contentAndApprovalService, taskService, clientService, userService } from '../../services';
 import { User, Client } from '../../types';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Card } from '../../components/ui/Card';
@@ -206,10 +206,7 @@ export const Approvals: React.FC = () => {
   const handleApprove = async (item: any) => {
     setIsSubmitting(true);
     try {
-      if (item.type === 'DAILY_REPORT') {
-        await dailyReportService.reviewReport(item.id, 'APPROVED', feedback || 'Approved by Admin');
-        toast.success('Daily report approved successfully');
-      } else if (item.type === 'TASK') {
+      if (item.type === 'TASK') {
         await taskService.approveTaskDeliverables(item.id, {
           approvedQuantity: Number(approvedQuantity),
           feedback,
@@ -234,10 +231,7 @@ export const Approvals: React.FC = () => {
   const handleRequestRevision = async (item: any) => {
     setIsSubmitting(true);
     try {
-      if (item.type === 'DAILY_REPORT') {
-        await dailyReportService.reviewReport(item.id, 'REVISION_REQUESTED', feedback || 'Revision requested');
-        toast.success('Revision request sent to employee');
-      } else if (item.type === 'TASK') {
+      if (item.type === 'TASK') {
         await taskService.rejectTask(item.id, {
           feedback: feedback || 'Please make the required revisions and resubmit at 100%.',
         });
@@ -352,12 +346,7 @@ export const Approvals: React.FC = () => {
       ) : (
         <div className="space-y-3">
           {items.map((item: any) => {
-            const Icon =
-              item.type === 'DAILY_REPORT'
-                ? FileText
-                : item.type === 'TASK'
-                ? CheckSquare
-                : Film;
+            const Icon = item.type === 'TASK' ? CheckSquare : Film;
 
             return (
               <Card
