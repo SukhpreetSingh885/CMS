@@ -1,88 +1,293 @@
-import React, { useState, useEffect } from 'react';
-import { taskService, meetingAndCommsService } from '../../services';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  addMonths,
+  subMonths,
+  addWeeks,
+  subWeeks,
+  addDays,
+  subDays,
+  startOfMonth,
+  endOfMonth,
+  startOfWeek,
+  endOfWeek,
+  startOfDay,
+  endOfDay,
+  format,
+} from 'date-fns';
+import {
+  calendarService,
+  clientService,
+} from '../../services';
+import {
+  CalendarEvent,
+  CalendarStats,
+  CalendarViewMode,
+  Client,
+} from '../../types';
 import { PageHeader } from '../../components/common/PageHeader';
-import { Card } from '../../components/ui/Card';
 import { LoadingState } from '../../components/common/LoadingState';
-import { formatDate, formatDateTime } from '../../utils/formatters';
-import { Calendar as CalendarIcon, CheckSquare, Video } from 'lucide-react';
+import {
+  CalendarHeader,
+  CalendarFilters,
+  MonthView,
+  WeekView,
+  DayView,
+  ListView,
+  EventDetailModal,
+  UpcomingEventsSidebar,
+} from '../../components/calendar';
+import { toast } from 'sonner';
 
 export const EmployeeCalendarPage: React.FC = () => {
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [meetings, setMeetings] = useState<any[]>([]);
+  const [currentDate, setCurrentDate] = useState<Date>(new Date());
+  const [viewMode, setViewMode] = useState<CalendarViewMode>('month');
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [stats, setStats] = useState<CalendarStats>({
+    total: 0,
+    tasks: 0,
+    content: 0,
+    meetings: 0,
+    renewals: 0,
+  });
   const [isLoading, setIsLoading] = useState(true);
 
+  // Filters
+  const [selectedType, setSelectedType] = useState<string>('ALL');
+  const [selectedClientId, setSelectedClientId] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Assigned Clients for Employee filter
+  const [clients, setClients] = useState<Client[]>([]);
+
+  // Modal state
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+
+  // Load employee's assigned clients
   useEffect(() => {
-    const loadSchedule = async () => {
-      setIsLoading(true);
+    const loadMyClients = async () => {
       try {
-        const [taskRes, meetingRes] = await Promise.all([
-          taskService.getMyTasks({ pageSize: 50 }),
-          meetingAndCommsService.listMeetings(),
-        ]);
-        setTasks(taskRes.data || []);
-        setMeetings(meetingRes || []);
-      } finally {
-        setIsLoading(false);
+        const cRes = await clientService.getMyClients({ pageSize: 100 });
+        setClients(cRes.data || []);
+      } catch (err) {
+        console.error('Error loading assigned clients:', err);
       }
     };
-    loadSchedule();
+    loadMyClients();
   }, []);
 
-  if (isLoading) {
-    return <LoadingState message="Loading your schedule..." />;
-  }
+  // Compute active date range for the current view
+  const dateRangeBounds = useMemo(() => {
+    let start: Date;
+    let end: Date;
+
+    if (viewMode === 'month') {
+      const mStart = startOfMonth(currentDate);
+      const mEnd = endOfMonth(mStart);
+      start = startOfWeek(mStart, { weekStartsOn: 1 });
+      end = endOfWeek(mEnd, { weekStartsOn: 1 });
+    } else if (viewMode === 'week') {
+      start = startOfWeek(currentDate, { weekStartsOn: 1 });
+      end = endOfWeek(currentDate, { weekStartsOn: 1 });
+    } else if (viewMode === 'day') {
+      start = startOfDay(currentDate);
+      end = endOfDay(currentDate);
+    } else {
+      start = startOfMonth(currentDate);
+      end = endOfMonth(addMonths(currentDate, 1));
+    }
+
+    return {
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+    };
+  }, [currentDate, viewMode]);
+
+  // Fetch employee calendar events (backend enforces strict employee authorization)
+  const loadEvents = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await calendarService.getEvents({
+        startDate: dateRangeBounds.startDate,
+        endDate: dateRangeBounds.endDate,
+        clientId: selectedClientId || undefined,
+        type: selectedType !== 'ALL' ? selectedType : undefined,
+        search: searchQuery.trim() || undefined,
+      });
+
+      setEvents(res.events || []);
+      setStats(res.stats || { total: 0, tasks: 0, content: 0, meetings: 0, renewals: 0 });
+    } catch (err: any) {
+      console.error('Failed to load employee calendar events', err);
+      toast.error('Could not load your calendar activities');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [dateRangeBounds, selectedClientId, selectedType, searchQuery]);
+
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
+
+  // Navigation handlers
+  const handlePrev = () => {
+    if (viewMode === 'month') setCurrentDate((d) => subMonths(d, 1));
+    else if (viewMode === 'week') setCurrentDate((d) => subWeeks(d, 1));
+    else if (viewMode === 'day') setCurrentDate((d) => subDays(d, 1));
+    else setCurrentDate((d) => subMonths(d, 1));
+  };
+
+  const handleNext = () => {
+    if (viewMode === 'month') setCurrentDate((d) => addMonths(d, 1));
+    else if (viewMode === 'week') setCurrentDate((d) => addWeeks(d, 1));
+    else if (viewMode === 'day') setCurrentDate((d) => addDays(d, 1));
+    else setCurrentDate((d) => addMonths(d, 1));
+  };
+
+  const handleToday = () => {
+    setCurrentDate(new Date());
+  };
+
+  // Date title label for header
+  const currentDateLabel = useMemo(() => {
+    if (viewMode === 'month') {
+      return format(currentDate, 'MMMM yyyy');
+    }
+    if (viewMode === 'week') {
+      const wStart = startOfWeek(currentDate, { weekStartsOn: 1 });
+      const wEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
+      return `${format(wStart, 'd MMM')} – ${format(wEnd, 'd MMM yyyy')}`;
+    }
+    if (viewMode === 'day') {
+      return format(currentDate, 'd MMMM yyyy');
+    }
+    return format(currentDate, 'MMMM yyyy');
+  }, [currentDate, viewMode]);
+
+  // Clear filters
+  const hasActiveFilters = Boolean(
+    selectedType !== 'ALL' || selectedClientId || searchQuery
+  );
+
+  const handleClearFilters = () => {
+    setSelectedType('ALL');
+    setSelectedClientId('');
+    setSearchQuery('');
+  };
+
+  // Event modal trigger
+  const handleSelectEvent = (event: CalendarEvent) => {
+    setSelectedEvent(event);
+    setIsDetailModalOpen(true);
+  };
+
+  const handleSelectDay = (date: Date) => {
+    setCurrentDate(date);
+    setViewMode('day');
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         title="My Work & Meeting Calendar"
-        description="Upcoming task delivery deadlines and scheduled client calls."
+        description="Your personal schedule for task delivery deadlines, client calls, and content publishing."
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="p-5">
-          <div className="flex items-center gap-2 pb-3 mb-4 border-b border-slate-100">
-            <CheckSquare className="w-5 h-5 text-purple-600" />
-            <h3 className="text-sm font-bold text-slate-900">Task Deadlines</h3>
-          </div>
-          <div className="space-y-3">
-            {tasks.length === 0 ? (
-              <p className="text-xs text-slate-500 py-4 text-center">No task deadlines.</p>
-            ) : (
-              tasks.map((t) => (
-                <div key={t.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-                  <p className="font-bold text-slate-900">{t.title}</p>
-                  <p className="text-[11px] text-purple-700 font-medium mt-0.5">{t.client?.companyName}</p>
-                  <p className="text-[10px] text-slate-600 font-semibold mt-1">Due {formatDate(t.dueDate)}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
+      {/* Main Grid: Calendar Left & Summary Sidebar Right */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 items-start">
+        {/* Left Column: Calendar Header, Filters, Active View */}
+        <div className="space-y-4">
+          <CalendarHeader
+            currentDateLabel={currentDateLabel}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            onPrev={handlePrev}
+            onNext={handleNext}
+            onToday={handleToday}
+            onRefresh={loadEvents}
+            isLoading={isLoading}
+            isAdmin={false}
+            onOpenAddModal={() => {}}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+          />
 
-        <Card className="p-5">
-          <div className="flex items-center gap-2 pb-3 mb-4 border-b border-slate-100">
-            <Video className="w-5 h-5 text-blue-600" />
-            <h3 className="text-sm font-bold text-slate-900">Scheduled Client Calls</h3>
-          </div>
-          <div className="space-y-3">
-            {meetings.length === 0 ? (
-              <p className="text-xs text-slate-500 py-4 text-center">No meetings scheduled.</p>
-            ) : (
-              meetings.map((m) => (
-                <div key={m.id} className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 text-xs">
-                  <p className="font-bold text-slate-900">{m.title}</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">{m.client?.companyName}</p>
-                  <p className="text-[10px] text-blue-700 font-semibold mt-1">
-                    {formatDateTime(m.meetingDateTime)}
-                  </p>
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
+          <CalendarFilters
+            selectedType={selectedType}
+            onTypeChange={setSelectedType}
+            selectedClientId={selectedClientId}
+            onClientChange={setSelectedClientId}
+            clients={clients}
+            stats={stats}
+            isAdmin={false}
+            onClearFilters={handleClearFilters}
+            hasActiveFilters={hasActiveFilters}
+          />
+
+          {isLoading ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-sm">
+              <LoadingState message="Loading your schedule..." />
+            </div>
+          ) : (
+            <>
+              {viewMode === 'month' && (
+                <MonthView
+                  currentDate={currentDate}
+                  events={events}
+                  onSelectEvent={handleSelectEvent}
+                  onSelectDay={handleSelectDay}
+                />
+              )}
+
+              {viewMode === 'week' && (
+                <WeekView
+                  currentDate={currentDate}
+                  events={events}
+                  onSelectEvent={handleSelectEvent}
+                  onSelectDay={handleSelectDay}
+                />
+              )}
+
+              {viewMode === 'day' && (
+                <DayView
+                  currentDate={currentDate}
+                  events={events}
+                  onSelectEvent={handleSelectEvent}
+                />
+              )}
+
+              {viewMode === 'list' && (
+                <ListView
+                  events={events}
+                  onSelectEvent={handleSelectEvent}
+                  onClearFilters={handleClearFilters}
+                  hasFilters={hasActiveFilters}
+                />
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Right Column: Upcoming Sidebar */}
+        <div className="space-y-4">
+          <UpcomingEventsSidebar
+            events={events}
+            stats={stats}
+            onSelectEvent={handleSelectEvent}
+            isAdmin={false}
+          />
+        </div>
       </div>
+
+      {/* Event Details Modal */}
+      <EventDetailModal
+        isOpen={isDetailModalOpen}
+        onClose={() => setIsDetailModalOpen(false)}
+        event={selectedEvent}
+        isAdmin={false}
+      />
     </div>
   );
 };
 
+export default EmployeeCalendarPage;

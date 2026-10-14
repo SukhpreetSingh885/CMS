@@ -12,6 +12,7 @@ import dashboardRoutes from './dashboard.routes.js';
 import reportRoutes from './report.routes.js';
 import notificationRoutes from './notification.routes.js';
 import auditRoutes from './audit.routes.js';
+import calendarRoutes from './calendar.routes.js';
 
 const apiRouter = Router();
 
@@ -30,6 +31,7 @@ apiRouter.use('/dashboard', dashboardRoutes); // /dashboard/admin, /dashboard/em
 apiRouter.use('/analytics', reportRoutes); // /analytics/client-delivery, export
 apiRouter.use('/notifications', notificationRoutes);
 apiRouter.use('/audit-logs', auditRoutes);
+apiRouter.use('/calendar', calendarRoutes);
 
 export default apiRouter;
 

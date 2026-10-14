@@ -16,6 +16,8 @@ import {
   Renewal,
   NotificationItem,
   AuditLogItem,
+  CalendarEventsResponse,
+  CalendarEvent,
 } from '../types';
 
 export const authService = {
@@ -528,4 +530,20 @@ export const auditService = {
     return res.data;
   },
 };
+
+export const calendarService = {
+  getEvents: async (params?: {
+    startDate?: string;
+    endDate?: string;
+    dateRange?: string;
+    clientId?: string;
+    employeeId?: string;
+    type?: string;
+    search?: string;
+  }): Promise<CalendarEventsResponse> => {
+    const res = await api.get('/calendar/events', { params });
+    return res.data.data;
+  },
+};
+
 

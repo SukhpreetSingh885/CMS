@@ -501,4 +501,65 @@ export interface FinanceSummary {
   recentPayments?: any[];
 }
 
+export type CalendarEventType = 'TASK' | 'CONTENT' | 'MEETING' | 'RENEWAL';
+export type CalendarViewMode = 'month' | 'week' | 'day' | 'list';
+
+export interface CalendarEventColor {
+  bg: string;
+  text: string;
+  border: string;
+  badge: string;
+  dot: string;
+  primaryHex: string;
+}
+
+export interface CalendarParticipant {
+  id: string;
+  name: string;
+  email?: string;
+  designation?: string | null;
+  avatarUrl?: string | null;
+}
+
+export interface CalendarEvent {
+  id: string;
+  type: CalendarEventType;
+  title: string;
+  description?: string | null;
+  start: string; // ISO 8601
+  end: string;   // ISO 8601
+  isAllDay: boolean;
+  status: string;
+  priority?: string | null;
+  clientId?: string | null;
+  clientName?: string | null;
+  clientEmail?: string | null;
+  assignedToId?: string | null;
+  assignedToName?: string | null;
+  assignedToEmail?: string | null;
+  assignedToAvatar?: string | null;
+  participants?: CalendarParticipant[];
+  meetingLink?: string | null;
+  platform?: string | null;
+  contentType?: string | null;
+  amount?: number | null;
+  sourceUrl?: string;
+  color: CalendarEventColor;
+  meta?: Record<string, any>;
+}
+
+export interface CalendarStats {
+  total: number;
+  tasks: number;
+  content: number;
+  meetings: number;
+  renewals: number;
+}
+
+export interface CalendarEventsResponse {
+  events: CalendarEvent[];
+  stats: CalendarStats;
+}
+
+
 
