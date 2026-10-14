@@ -24,7 +24,13 @@ async function main() {
 
   if (existingAdminCount === 0) {
     const adminEmail = (process.env.INITIAL_ADMIN_EMAIL || 'admin@viralstan.com').toLowerCase();
-    const adminRawPassword = process.env.INITIAL_ADMIN_PASSWORD || 'AdminPassword@2026';
+   const adminRawPassword = process.env.INITIAL_ADMIN_PASSWORD;
+
+if (!adminRawPassword || adminRawPassword.length < 8) {
+  throw new Error(
+    'INITIAL_ADMIN_PASSWORD must contain at least 8 characters.'
+  );
+}
     const adminPasswordHash = await hashPassword(adminRawPassword);
 
     const masterAdmin = await prisma.user.create({
