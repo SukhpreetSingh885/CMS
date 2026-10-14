@@ -293,11 +293,17 @@ export const dailyReportService = {
     const res = await api.post(`/reports/daily/${id}/submit`);
     return res.data.data;
   },
-  reviewReport: async (id: string, status: string, reviewerComments: string): Promise<DailyReport> => {
-    const res = await api.patch(`/reports/daily/${id}/review`, { status, reviewerComments });
+  uploadAttachment: async (reportId: string, file: File): Promise<any> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await api.post(`/reports/daily/${reportId}/attachments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return res.data.data;
   },
 };
+
+export const clientReportService = dailyReportService;
 
 export const contentAndApprovalService = {
   listContent: async (params?: any) => {

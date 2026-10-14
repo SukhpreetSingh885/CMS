@@ -62,6 +62,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="tasks" element={<Tasks />} />
         <Route path="my-tasks" element={<AdminMyTasks />} />
         <Route path="daily-reports" element={<DailyReports />} />
+        <Route path="client-reports" element={<DailyReports />} />
         <Route path="approvals" element={<Approvals />} />
         <Route path="calendar" element={<AdminCalendar />} />
         <Route path="meetings" element={<Meetings />} />
@@ -82,7 +83,9 @@ export const AppRoutes: React.FC = () => {
         <Route path="my-clients" element={<MyClients />} />
         <Route path="my-tasks" element={<EmployeeMyTasks />} />
         <Route path="daily-report" element={<DailyReportSubmit />} />
+        <Route path="client-report" element={<DailyReportSubmit />} />
         <Route path="my-reports" element={<MyReports />} />
+        <Route path="my-client-reports" element={<MyReports />} />
         <Route path="calendar" element={<EmployeeCalendarPage />} />
         <Route path="profile" element={<Profile />} />
       </Route>

@@ -51,7 +51,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { label: 'Work & Execution', isHeader: true },
     { to: '/admin/tasks', label: 'All Tasks', icon: CheckSquare },
     { to: '/admin/my-tasks', label: 'My Assigned Tasks', icon: ClipboardList },
-    { to: '/admin/daily-reports', label: 'Daily Work Reports', icon: FileText },
+    { to: '/admin/daily-reports', label: 'Client Work Reports', icon: FileText },
     { to: '/admin/calendar', label: 'Production Calendar', icon: Calendar },
 
     { label: 'Client Management', isHeader: true },
@@ -82,9 +82,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { to: '/employee/my-clients', label: 'My Assigned Clients', icon: Briefcase },
     { to: '/employee/my-tasks', label: 'My Tasks', icon: CheckSquare },
 
-    { label: 'Daily Reporting', isHeader: true },
-    { to: '/employee/daily-report', label: 'Submit Daily Report', icon: FileText },
-    { to: '/employee/my-reports', label: 'My Reports History', icon: ClipboardList },
+    { label: 'Client Reporting', isHeader: true },
+    { to: '/employee/daily-report', label: 'Submit Client Report', icon: FileText },
+    { to: '/employee/my-reports', label: 'My Client Reports', icon: ClipboardList },
 
     { label: 'Schedule & Profile', isHeader: true },
     { to: '/employee/calendar', label: 'My Calendar', icon: Calendar },

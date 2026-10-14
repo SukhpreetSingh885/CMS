@@ -276,6 +276,8 @@ export interface DailyReport {
   service?: { id: string; name: string } | null;
   workDescription: string;
   workCompleted: string;
+  quantity?: number | null;
+  unit?: string | null;
   workPending?: string | null;
   hoursSpent: number;
   issuesOrBlockers?: string | null;
@@ -288,9 +290,19 @@ export interface DailyReport {
   reviewedAt?: string | null;
   isSelfReviewed: boolean;
   history?: any[];
-  attachments?: any[];
+  attachments?: {
+    id: string;
+    reportId: string;
+    fileName: string;
+    fileUrl: string;
+    fileType?: string | null;
+    fileSize?: number | null;
+    createdAt: string;
+  }[];
   createdAt: string;
 }
+
+export type ClientWorkReport = DailyReport;
 
 export interface ContentItem {
   id: string;

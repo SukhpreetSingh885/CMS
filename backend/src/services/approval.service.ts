@@ -15,7 +15,8 @@ export class ApprovalService {
     endDate?: string;
     search?: string;
   } = {}) {
-    const shouldFetchReports = !query.type || query.type === 'ALL' || query.type === 'DAILY_REPORT';
+    // Client Work Reports do NOT require Admin approval and are excluded from the approval queue
+    const shouldFetchReports = false;
     const shouldFetchTasks = !query.type || query.type === 'ALL' || query.type === 'TASK';
     const shouldFetchContent = !query.type || query.type === 'ALL' || query.type === 'CONTENT';
 

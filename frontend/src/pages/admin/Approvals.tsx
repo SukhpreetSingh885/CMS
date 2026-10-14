@@ -261,14 +261,13 @@ export const Approvals: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Centralized Approval Queue"
-        description="Review and act on pending daily reports, creative task deliverables, and social media content."
+        description="Review and act on pending creative task deliverables and social media content."
       />
 
       {/* Queue Filter Tabs */}
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
         {[
           { key: 'ALL', label: `All Queue (${approvalsData?.total || items.length})` },
-          { key: 'DAILY_REPORT', label: `Daily Reports (${approvalsData?.counts?.dailyReports || 0})` },
           { key: 'TASK', label: `Tasks (${approvalsData?.counts?.tasks || 0})` },
           { key: 'CONTENT', label: `Content Pipeline (${approvalsData?.counts?.content || 0})` },
         ].map((tab) => (

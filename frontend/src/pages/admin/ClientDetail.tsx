@@ -30,9 +30,11 @@ import {
   Check,
   X,
   UserPlus,
+  Eye,
+  Paperclip,
 } from 'lucide-react';
-import { clientService, meetingAndCommsService, taskService, financeService, userService } from '../../services';
-import { Client, User } from '../../types';
+import { clientService, meetingAndCommsService, taskService, financeService, userService, dailyReportService } from '../../services';
+import { Client, User, DailyReport } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
@@ -55,12 +57,17 @@ export const ClientDetail: React.FC = () => {
 
   const initialTabParam = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'services' | 'tasks' | 'content' | 'meetings' | 'comms' | 'files' | 'finance' | 'renewals'
+    'overview' | 'services' | 'tasks' | 'content' | 'meetings' | 'comms' | 'files' | 'finance' | 'renewals' | 'reports'
   >(
-    initialTabParam === 'services' || initialTabParam === 'tasks'
-      ? initialTabParam
+    initialTabParam === 'services' || initialTabParam === 'tasks' || initialTabParam === 'reports'
+      ? (initialTabParam as any)
       : 'overview'
   );
+
+  // Client Work Reports state
+  const [clientReports, setClientReports] = useState<DailyReport[]>([]);
+  const [isLoadingReports, setIsLoadingReports] = useState(false);
+  const [selectedReportForView, setSelectedReportForView] = useState<DailyReport | null>(null);
 
   // Manage Service Team Modal states
   const [activeEmployees, setActiveEmployees] = useState<User[]>([]);
@@ -130,6 +137,19 @@ export const ClientDetail: React.FC = () => {
       setClient(res);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadClientReports = async () => {
+    if (!id) return;
+    setIsLoadingReports(true);
+    try {
+      const res = await dailyReportService.listReports({ clientId: id, pageSize: 100 });
+      setClientReports(res.data || []);
+    } catch {
+      // Non-blocking
+    } finally {
+      setIsLoadingReports(false);
     }
   };
 
@@ -305,6 +325,7 @@ export const ClientDetail: React.FC = () => {
   useEffect(() => {
     loadClient();
     loadActiveEmployees();
+    loadClientReports();
   }, [id, isAdmin]);
 
   if (isLoading) {
@@ -326,6 +347,7 @@ export const ClientDetail: React.FC = () => {
     { key: 'overview', label: 'Overview' },
     { key: 'services', label: `Services (${client.services?.length || 0})` },
     { key: 'tasks', label: `Tasks (${client.tasks?.length || 0})` },
+    { key: 'reports', label: `Work Reports (${clientReports.length})` },
     { key: 'content', label: `Content (${client.contentItems?.length || 0})` },
     { key: 'comms', label: `Comms (${client.communications?.length || 0})` },
     { key: 'meetings', label: `Meetings (${client.meetings?.length || 0})` },
@@ -1218,6 +1240,272 @@ export const ClientDetail: React.FC = () => {
             ))}
           </div>
         </Card>
+      )}
+
+      {/* TAB CONTENT: CLIENT WORK REPORTS */}
+      {activeTab === 'reports' && (
+        <Card className="p-0 overflow-hidden">
+          <CardHeader className="p-5 border-b border-slate-100 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle>Client Work Reports History</CardTitle>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Chronological work submissions, deliverables, and proofs logged for {client.companyName} by assigned team members.
+              </p>
+            </div>
+            <Link
+              to={`/admin/daily-reports?clientId=${client.id}`}
+              className="text-xs font-semibold text-purple-600 hover:text-purple-700 flex items-center gap-1"
+            >
+              View in Central Log <ArrowLeft className="w-3.5 h-3.5 rotate-180" />
+            </Link>
+          </CardHeader>
+
+          {isLoadingReports ? (
+            <div className="p-8">
+              <LoadingState message="Loading client work reports..." />
+            </div>
+          ) : clientReports.length === 0 ? (
+            <div className="p-12 text-center">
+              <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+              <h3 className="text-base font-bold text-slate-900">No work reports logged yet</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+                Assigned team members will submit work reports with completed deliverables, hours, and attachments.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-600 border-b border-slate-100 uppercase tracking-wider font-semibold">
+                  <tr>
+                    <th className="py-3 px-5">Submission Time</th>
+                    <th className="py-3 px-4">Employee</th>
+                    <th className="py-3 px-4">Service & Task</th>
+                    <th className="py-3 px-4">Work Completed</th>
+                    <th className="py-3 px-4">Quantity</th>
+                    <th className="py-3 px-4">Hours</th>
+                    <th className="py-3 px-4">Proof</th>
+                    <th className="py-3 px-5 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {clientReports.map((report) => {
+                    const attachmentCount = report.attachments?.length || 0;
+                    return (
+                      <tr key={report.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3.5 px-5">
+                          <div className="font-bold text-slate-900">
+                            {formatDateTime(report.createdAt || report.reportDate)}
+                          </div>
+                          <span className="text-[10px] text-slate-400">
+                            Log Date: {formatDate(report.reportDate)}
+                          </span>
+                        </td>
+
+                        <td className="py-3.5 px-4">
+                          <p className="font-bold text-slate-900">{report.submittedBy?.fullName}</p>
+                          <p className="text-[10px] text-slate-400">
+                            {report.submittedBy?.designation || 'Staff'}
+                          </p>
+                        </td>
+
+                        <td className="py-3.5 px-4 text-slate-700">
+                          <p className="font-medium text-slate-900">
+                            {report.service?.name || 'General Work'}
+                          </p>
+                          {report.task?.title && (
+                            <p className="text-[10px] text-slate-500 truncate max-w-xs">
+                              Task: {report.task.title}
+                            </p>
+                          )}
+                        </td>
+
+                        <td className="py-3.5 px-4 max-w-xs">
+                          <p className="font-medium text-slate-900 truncate">{report.workCompleted}</p>
+                          {report.workDescription && (
+                            <p className="text-[10px] text-slate-500 truncate">{report.workDescription}</p>
+                          )}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-slate-700">
+                          {report.quantity !== undefined && report.quantity !== null && Number(report.quantity) > 0 ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                              {Number(report.quantity)} {report.unit || 'units'}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+
+                        <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
+                          {Number(report.hoursSpent) > 0 ? `${report.hoursSpent} hrs` : '—'}
+                        </td>
+
+                        <td className="py-3.5 px-4">
+                          {attachmentCount > 0 ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                              <Paperclip className="w-3 h-3" /> {attachmentCount} file{attachmentCount === 1 ? '' : 's'}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-[11px]">—</span>
+                          )}
+                        </td>
+
+                        <td className="py-3.5 px-5 text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setSelectedReportForView(report)}
+                            className="text-xs"
+                          >
+                            <Eye className="w-3.5 h-3.5 mr-1" /> View Details
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Inspect Client Work Report Modal */}
+      {selectedReportForView && (
+        <Modal
+          isOpen={Boolean(selectedReportForView)}
+          onClose={() => setSelectedReportForView(null)}
+          title={`Client Work Report — ${selectedReportForView.client?.companyName || client.companyName}`}
+          description={`Submitted by ${selectedReportForView.submittedBy?.fullName || 'Employee'} on ${formatDateTime(selectedReportForView.createdAt || selectedReportForView.reportDate)}`}
+          maxWidth="2xl"
+        >
+          <div className="space-y-4">
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Author</span>
+                <span className="font-bold text-slate-900 truncate block">
+                  {selectedReportForView.submittedBy?.fullName || '—'}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Service</span>
+                <span className="font-bold text-slate-900 truncate block">
+                  {selectedReportForView.service?.name || 'General Work'}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Quantity</span>
+                <span className="font-bold text-slate-900 block">
+                  {selectedReportForView.quantity !== undefined && selectedReportForView.quantity !== null && Number(selectedReportForView.quantity) > 0
+                    ? `${Number(selectedReportForView.quantity)} ${selectedReportForView.unit || 'units'}`
+                    : '—'}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Hours Logged</span>
+                <span className="font-bold text-slate-900 block">
+                  {Number(selectedReportForView.hoursSpent) > 0 ? `${selectedReportForView.hoursSpent} hrs` : '—'}
+                </span>
+              </div>
+            </div>
+
+            {selectedReportForView.task && (
+              <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 text-xs">
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Linked Task</span>
+                <span className="font-semibold text-slate-900">{selectedReportForView.task.title}</span>
+              </div>
+            )}
+
+            <div>
+              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-1">
+                Work Completed (Summary)
+              </h4>
+              <p className="text-xs text-slate-900 leading-relaxed bg-white p-3 rounded-lg border border-slate-200 font-medium whitespace-pre-line">
+                {selectedReportForView.workCompleted}
+              </p>
+            </div>
+
+            {selectedReportForView.workDescription && (
+              <div>
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-1">
+                  Detailed Scope & Description
+                </h4>
+                <p className="text-xs text-slate-700 leading-relaxed bg-slate-50/70 p-3 rounded-lg border border-slate-200 whitespace-pre-line">
+                  {selectedReportForView.workDescription}
+                </p>
+              </div>
+            )}
+
+            {selectedReportForView.workPending && (
+              <div>
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-1">
+                  Pending Work & Next Steps
+                </h4>
+                <p className="text-xs text-slate-700 bg-amber-50/50 p-3 rounded-lg border border-amber-200/60 whitespace-pre-line">
+                  {selectedReportForView.workPending}
+                </p>
+              </div>
+            )}
+
+            {selectedReportForView.issuesOrBlockers && (
+              <div>
+                <h4 className="text-xs font-bold text-rose-800 uppercase tracking-wider mb-1 flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" /> Issues or Blockers
+                </h4>
+                <p className="text-xs text-rose-900 bg-rose-50/70 p-3 rounded-lg border border-rose-200 whitespace-pre-line">
+                  {selectedReportForView.issuesOrBlockers}
+                </p>
+              </div>
+            )}
+
+            {/* Attachments */}
+            <div>
+              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                <Paperclip className="w-3.5 h-3.5 text-slate-500" /> Proof of Work & Attachments ({selectedReportForView.attachments?.length || 0})
+              </h4>
+              {!selectedReportForView.attachments || selectedReportForView.attachments.length === 0 ? (
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-400 text-center italic">
+                  No proof of work files attached to this report.
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {selectedReportForView.attachments.map((att: any) => (
+                    <div
+                      key={att.id}
+                      className="p-2.5 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-xs hover:border-slate-300 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="w-4 h-4 text-purple-600 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-900 truncate">{att.fileName}</p>
+                          <p className="text-[10px] text-slate-400">
+                            {att.fileSize ? `${Math.round(att.fileSize / 1024)} KB` : ''} • {formatDateTime(att.createdAt)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <a
+                          href={att.fileUrl || `/api/daily-reports/daily/${selectedReportForView.id}/attachments/${att.id}/download`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2.5 py-1 text-[11px] font-semibold text-purple-700 hover:text-purple-900 hover:bg-purple-50 rounded-md border border-purple-200 transition-colors inline-flex items-center gap-1"
+                        >
+                          <Download className="w-3 h-3" /> Download
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end pt-3 border-t border-slate-100">
+              <Button type="button" variant="outline" size="sm" onClick={() => setSelectedReportForView(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* Manage Service Team Modal */}

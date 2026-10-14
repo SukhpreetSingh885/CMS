@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Users, Plus, Search, UserCheck, UserX, Briefcase, CheckSquare } from 'lucide-react';
+import { Users, Plus, Search, UserCheck, UserX, Briefcase, CheckSquare, FileText } from 'lucide-react';
 import { userService } from '../../services';
 import { User } from '../../types';
 import { PageHeader } from '../../components/common/PageHeader';
@@ -278,27 +279,36 @@ export const Employees: React.FC = () => {
                     </td>
 
                     <td className="py-3.5 px-5 text-right">
-                      {emp.status === 'ACTIVE' ? (
-                        <button
-                          onClick={() => {
-                            setSelectedEmployee(emp);
-                            setStatusAction('DISABLED');
-                          }}
-                          className="px-2.5 py-1 text-xs font-medium text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg border border-rose-200 transition-colors inline-flex items-center gap-1"
+                      <div className="flex items-center justify-end gap-2">
+                        <Link
+                          to={`/admin/daily-reports?submittedById=${emp.id}`}
+                          className="px-2.5 py-1 text-xs font-medium text-purple-700 hover:text-purple-900 hover:bg-purple-50 rounded-lg border border-purple-200 transition-colors inline-flex items-center gap-1"
+                          title="View Client Work Reports"
                         >
-                          <UserX className="w-3.5 h-3.5" /> Disable
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setSelectedEmployee(emp);
-                            setStatusAction('ACTIVE');
-                          }}
-                          className="px-2.5 py-1 text-xs font-medium text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg border border-emerald-200 transition-colors inline-flex items-center gap-1"
-                        >
-                          <UserCheck className="w-3.5 h-3.5" /> Reactivate
-                        </button>
-                      )}
+                          <FileText className="w-3.5 h-3.5" /> Reports
+                        </Link>
+                        {emp.status === 'ACTIVE' ? (
+                          <button
+                            onClick={() => {
+                              setSelectedEmployee(emp);
+                              setStatusAction('DISABLED');
+                            }}
+                            className="px-2.5 py-1 text-xs font-medium text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg border border-rose-200 transition-colors inline-flex items-center gap-1"
+                          >
+                            <UserX className="w-3.5 h-3.5" /> Disable
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setSelectedEmployee(emp);
+                              setStatusAction('ACTIVE');
+                            }}
+                            className="px-2.5 py-1 text-xs font-medium text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg border border-emerald-200 transition-colors inline-flex items-center gap-1"
+                          >
+                            <UserCheck className="w-3.5 h-3.5" /> Reactivate
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

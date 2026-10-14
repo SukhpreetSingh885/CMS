@@ -490,10 +490,12 @@ model DailyWorkReport {
   workCompleted    String       @db.Text
   workPending      String?      @db.Text
   hoursSpent       Decimal      @default(0.00) @db.Decimal(5, 2)
+  quantity         Decimal?     @db.Decimal(10, 2)
+  unit             String?      @db.VarChar(100)
   issuesOrBlockers String?      @db.Text
   nextAction       String?      @db.Text
-  status           ReportStatus @default(DRAFT)
-  submittedAt      DateTime?
+  status           ReportStatus @default(SUBMITTED)
+  submittedAt      DateTime?    @default(now())
   reviewerId       String?
   reviewerComments String?      @db.Text
   reviewedAt       DateTime?
@@ -513,6 +515,8 @@ model DailyWorkReport {
   @@index([clientId])
   @@index([status])
   @@index([reportDate])
+  @@index([taskId])
+  @@index([serviceId])
 }
 
 model DailyReportAttachment {
@@ -537,6 +541,8 @@ model DailyReportHistory {
   workCompleted    String       @db.Text
   workPending      String?      @db.Text
   hoursSpent       Decimal      @default(0.00) @db.Decimal(5, 2)
+  quantity         Decimal?     @db.Decimal(10, 2)
+  unit             String?      @db.VarChar(100)
   status           ReportStatus
   reviewerComments String?      @db.Text
   modifiedAt       DateTime     @default(now())

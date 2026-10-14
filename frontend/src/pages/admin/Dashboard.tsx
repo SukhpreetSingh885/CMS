@@ -195,12 +195,12 @@ export const AdminDashboard: React.FC = () => {
         />
 
         <StatCard
-          title="Pending Approvals"
-          value={kpis?.pendingReportApprovals || 0}
-          subtitle="Daily reports awaiting review"
+          title="Client Reports"
+          value={kpis?.totalClientReports ?? kpis?.pendingReportApprovals ?? 0}
+          subtitle="Client work submissions"
           icon={FileText}
           color="purple"
-          onClick={() => navigate('/admin/approvals?status=SUBMITTED')}
+          onClick={() => navigate('/admin/daily-reports')}
         />
 
         <StatCard
@@ -272,35 +272,45 @@ export const AdminDashboard: React.FC = () => {
           </Card>
         </div>
 
-        {/* Pending Approvals & Overdue Tasks */}
+        {/* Recent Client Work Reports & Overdue Tasks */}
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Pending Approvals</CardTitle>
+              <CardTitle>Recent Client Work Reports</CardTitle>
               <Link
-                to="/admin/approvals"
+                to="/admin/daily-reports"
                 className="text-xs font-semibold text-purple-600 hover:text-purple-700"
               >
-                Review queue
+                View all
               </Link>
             </CardHeader>
 
             <div className="space-y-3">
-              {sections?.recentDailyReports?.slice(0, 4).map((r: any) => (
-                <div
-                  key={r.id}
-                  className="p-3 bg-slate-50 rounded-lg border border-slate-200/60 flex items-start justify-between gap-2"
-                >
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 truncate">
-                      {r.submittedBy?.fullName}
-                    </p>
-                    <p className="text-[11px] text-slate-500 truncate">{r.client?.companyName}</p>
-                    <span className="text-[10px] text-slate-400">{formatDate(r.reportDate)}</span>
+              {((sections?.recentClientReports || sections?.recentDailyReports) || []).length === 0 ? (
+                <p className="text-xs text-slate-500 py-3 text-center">No reports submitted recently.</p>
+              ) : (
+                (sections?.recentClientReports || sections?.recentDailyReports)?.slice(0, 4).map((r: any) => (
+                  <div
+                    key={r.id}
+                    className="p-3 bg-slate-50 rounded-lg border border-slate-200/60 flex items-start justify-between gap-2 hover:bg-slate-100/70 transition-colors cursor-pointer"
+                    onClick={() => navigate(`/admin/daily-reports?reportId=${r.id}`)}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-slate-900 truncate">
+                        {r.submittedBy?.fullName}
+                      </p>
+                      <p className="text-[11px] text-purple-700 font-medium truncate">{r.client?.companyName}</p>
+                      <p className="text-[10px] text-slate-600 truncate">{r.workCompleted}</p>
+                      <span className="text-[10px] text-slate-400">{formatDate(r.reportDate || r.createdAt)}</span>
+                    </div>
+                    {r.quantity !== undefined && r.quantity !== null && Number(r.quantity) > 0 ? (
+                      <span className="text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded shrink-0">
+                        {Number(r.quantity)} {r.unit || 'units'}
+                      </span>
+                    ) : null}
                   </div>
-                  <StatusBadge status={r.status} className="shrink-0" />
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </Card>
 

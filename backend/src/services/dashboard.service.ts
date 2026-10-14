@@ -67,10 +67,8 @@ export class DashboardService {
           status: { notIn: [TaskStatus.COMPLETED, TaskStatus.DELIVERED, TaskStatus.APPROVED] },
         },
       }),
-      // 10. Pending report approvals
-      prisma.dailyWorkReport.count({
-        where: { status: { in: [ReportStatus.SUBMITTED, ReportStatus.UNDER_REVIEW] } },
-      }),
+      // 10. Client reports count
+      prisma.dailyWorkReport.count(),
       // 11. Invoices for financial KPI calculations
       prisma.invoice.findMany({
         where: {
@@ -97,11 +95,18 @@ export class DashboardService {
           renewalStatus: { in: [RenewalStatus.UPCOMING, RenewalStatus.DUE] },
         },
       }),
-      // 13. Recent daily reports
+      // 13. Recent client reports
       prisma.dailyWorkReport.findMany({
         take: 6,
         orderBy: { reportDate: 'desc' },
-        include: {
+        select: {
+          id: true,
+          reportDate: true,
+          workCompleted: true,
+          workDescription: true,
+          hoursSpent: true,
+          status: true,
+          createdAt: true,
           submittedBy: { select: { id: true, fullName: true, designation: true } },
           client: { select: { id: true, companyName: true } },
         },
@@ -287,7 +292,8 @@ export class DashboardService {
         tasksAssignedToday: tasksToday,
         tasksCompleted,
         pendingTasks,
-        pendingReportApprovals: pendingReportsCount,
+        totalClientReports: pendingReportsCount,
+        pendingReportApprovals: 0,
         totalReceivedMoney: receivedMoneyData.totalReceivedMoney,
         allTimeReceivedMoney: receivedMoneyData.allTimeReceivedMoney,
         receivedPaymentsCount: receivedMoneyData.periodPaymentCount,
@@ -307,6 +313,7 @@ export class DashboardService {
         clientDeliveryProgress: clientDeliveryList,
         employeeProductivity: employeeProductivityList,
         recentDailyReports: recentReports,
+        recentClientReports: recentReports,
         overdueTasks: overdueTaskList,
         todayTasks,
         upcomingMeetings,
@@ -407,7 +414,14 @@ export class DashboardService {
         where: { submittedById: userId },
         take: 5,
         orderBy: { reportDate: 'desc' },
-        include: {
+        select: {
+          id: true,
+          reportDate: true,
+          workCompleted: true,
+          workDescription: true,
+          hoursSpent: true,
+          status: true,
+          createdAt: true,
           client: { select: { companyName: true } },
           reviewer: { select: { fullName: true } },
         },

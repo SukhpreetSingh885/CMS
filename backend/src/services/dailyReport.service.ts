@@ -3,24 +3,79 @@ import { prisma } from '../config/db.js';
 import { AppError, ForbiddenError, NotFoundError } from '../utils/AppError.js';
 import { AuditService } from './audit.service.js';
 import { buildPrismaDateFilter } from '../utils/dateRange.js';
+import path from 'path';
+import fs from 'fs';
 
 export interface CreateDailyReportDto {
   reportDate?: string;
   clientId: string;
   taskId?: string | null;
   serviceId?: string | null;
-  workDescription: string;
+  workDescription?: string | null;
   workCompleted: string;
+  quantity?: number | null;
+  unit?: string | null;
   workPending?: string | null;
-  hoursSpent: number;
+  hoursSpent?: number | null;
   issuesOrBlockers?: string | null;
   nextAction?: string | null;
   isDraft?: boolean;
 }
 
 export class DailyReportService {
+  private static _hasQuantityColumn: boolean | null = null;
+
   /**
-   * List daily reports with filters for date range, employee, client, task, service, status, self-reviewed, and search
+   * Dynamically checks whether the quantity & unit columns exist on DailyWorkReport in MySQL.
+   * Ensures backwards and forward compatibility before & after the database migration.
+   */
+  static async getHasQuantityColumn(): Promise<boolean> {
+    if (DailyReportService._hasQuantityColumn !== null) {
+      return DailyReportService._hasQuantityColumn;
+    }
+    try {
+      const res: any = await prisma.$queryRawUnsafe(`
+        SELECT COUNT(*) as cnt 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'DailyWorkReport' AND COLUMN_NAME = 'quantity'
+      `);
+      const count = Number(res[0]?.cnt ?? res[0]?.['COUNT(*)'] ?? 0);
+      DailyReportService._hasQuantityColumn = count > 0;
+    } catch {
+      DailyReportService._hasQuantityColumn = false;
+    }
+    return DailyReportService._hasQuantityColumn;
+  }
+
+  /**
+   * Normalizes report output, parsing quantity/unit from native columns or deliverable tags.
+   */
+  static normalizeReport(r: any) {
+    if (!r) return r;
+    let quantity: number | null = null;
+    let unit: string | null = null;
+
+    if (r.quantity !== undefined && r.quantity !== null) {
+      quantity = Number(r.quantity);
+      unit = r.unit || null;
+    } else if (typeof r.workCompleted === 'string') {
+      const match = r.workCompleted.match(/^\[(?:Deliverable:\s*)?([0-9.]+)\s*([^\]]*)\]/i);
+      if (match) {
+        quantity = parseFloat(match[1]);
+        unit = match[2]?.trim() || null;
+      }
+    }
+
+    return {
+      ...r,
+      quantity,
+      unit,
+      hoursSpent: Number(r.hoursSpent || 0),
+    };
+  }
+
+  /**
+   * List client work reports with smart filters (client, employee, service, task, status, date)
    */
   static async listReports(query: {
     submittedById?: string;
@@ -79,7 +134,7 @@ export class DailyReportService {
       ];
     }
 
-    // Dynamic sorting
+    // Dynamic sorting (default to reportDate desc, createdAt desc)
     const validSortFields = ['reportDate', 'createdAt', 'hoursSpent', 'status'];
     const sortBy = query.sortBy && validSortFields.includes(query.sortBy) ? query.sortBy : 'reportDate';
     const sortOrder: Prisma.SortOrder = query.sortOrder === 'asc' ? 'asc' : 'desc';
@@ -88,35 +143,69 @@ export class DailyReportService {
       { createdAt: 'desc' },
     ];
 
-    const [total, reports] = await Promise.all([
+    const hasCol = await DailyReportService.getHasQuantityColumn();
+
+    const selectFields: any = {
+      id: true,
+      reportDate: true,
+      submittedById: true,
+      clientId: true,
+      taskId: true,
+      serviceId: true,
+      workDescription: true,
+      workCompleted: true,
+      workPending: true,
+      hoursSpent: true,
+      issuesOrBlockers: true,
+      nextAction: true,
+      status: true,
+      submittedAt: true,
+      reviewerId: true,
+      reviewerComments: true,
+      reviewedAt: true,
+      isSelfReviewed: true,
+      createdAt: true,
+      updatedAt: true,
+      submittedBy: {
+        select: { id: true, fullName: true, email: true, role: true, designation: true },
+      },
+      reviewer: {
+        select: { id: true, fullName: true, email: true },
+      },
+      client: {
+        select: { id: true, companyName: true },
+      },
+      task: {
+        select: { id: true, title: true },
+      },
+      service: {
+        select: { id: true, name: true },
+      },
+      attachments: {
+        orderBy: { createdAt: 'desc' },
+      },
+      _count: {
+        select: { attachments: true, history: true },
+      },
+    };
+
+    if (hasCol) {
+      selectFields.quantity = true;
+      selectFields.unit = true;
+    }
+
+    const [total, rawReports] = await Promise.all([
       prisma.dailyWorkReport.count({ where }),
       prisma.dailyWorkReport.findMany({
         where,
         skip,
         take: pageSize,
         orderBy,
-        include: {
-          submittedBy: {
-            select: { id: true, fullName: true, email: true, role: true, designation: true },
-          },
-          reviewer: {
-            select: { id: true, fullName: true, email: true },
-          },
-          client: {
-            select: { id: true, companyName: true },
-          },
-          task: {
-            select: { id: true, title: true },
-          },
-          service: {
-            select: { id: true, name: true },
-          },
-          _count: {
-            select: { attachments: true, history: true },
-          },
-        },
+        select: selectFields,
       }),
     ]);
+
+    const reports = rawReports.map((r: any) => DailyReportService.normalizeReport(r));
 
     return { total, page, pageSize, reports };
   }
@@ -125,39 +214,84 @@ export class DailyReportService {
    * Get single report by ID with history and attachments
    */
   static async getReportById(id: string) {
-    const report = await prisma.dailyWorkReport.findUnique({
-      where: { id },
-      include: {
-        submittedBy: {
-          select: { id: true, fullName: true, email: true, role: true, designation: true, phone: true },
-        },
-        reviewer: {
-          select: { id: true, fullName: true, email: true },
-        },
-        client: {
-          select: { id: true, companyName: true, contactPerson: true, email: true },
-        },
-        task: true,
-        service: true,
-        attachments: true,
-        history: {
-          orderBy: { modifiedAt: 'desc' },
+    const hasCol = await DailyReportService.getHasQuantityColumn();
+
+    const selectFields: any = {
+      id: true,
+      reportDate: true,
+      submittedById: true,
+      clientId: true,
+      taskId: true,
+      serviceId: true,
+      workDescription: true,
+      workCompleted: true,
+      workPending: true,
+      hoursSpent: true,
+      issuesOrBlockers: true,
+      nextAction: true,
+      status: true,
+      submittedAt: true,
+      reviewerId: true,
+      reviewerComments: true,
+      reviewedAt: true,
+      isSelfReviewed: true,
+      createdAt: true,
+      updatedAt: true,
+      submittedBy: {
+        select: { id: true, fullName: true, email: true, role: true, designation: true, phone: true },
+      },
+      reviewer: {
+        select: { id: true, fullName: true, email: true },
+      },
+      client: {
+        select: { id: true, companyName: true, contactPerson: true, email: true },
+      },
+      task: true,
+      service: true,
+      attachments: {
+        orderBy: { createdAt: 'desc' },
+      },
+      history: {
+        orderBy: { modifiedAt: 'desc' },
+        select: {
+          id: true,
+          reportId: true,
+          version: true,
+          workDescription: true,
+          workCompleted: true,
+          workPending: true,
+          hoursSpent: true,
+          status: true,
+          modifiedById: true,
+          modifiedAt: true,
+          ...(hasCol ? { quantity: true, unit: true } : {}),
         },
       },
+    };
+
+    if (hasCol) {
+      selectFields.quantity = true;
+      selectFields.unit = true;
+    }
+
+    const report = await prisma.dailyWorkReport.findUnique({
+      where: { id },
+      select: selectFields,
     });
 
     if (!report) {
-      throw new AppError('Daily work report not found', 404);
+      throw new AppError('Client work report not found', 404);
     }
 
-    return report;
+    return DailyReportService.normalizeReport(report);
   }
 
   /**
-   * Create daily work report (either draft or submitted)
+   * Create client work report.
+   * Supports multiple reports for the same client on the same day without overwriting.
    */
   static async createReport(dto: CreateDailyReportDto, submittedById: string, meta?: { ipAddress?: string }) {
-    // Verify client assignment for Employees
+    // 1. Verify client assignment for Employees
     const user = await prisma.user.findUnique({ where: { id: submittedById } });
     if (user && user.role === 'EMPLOYEE') {
       const isAssigned = await prisma.clientAssignedEmployee.findUnique({
@@ -197,71 +331,172 @@ export class DailyReportService {
       }
     }
 
-    const status = dto.isDraft ? ReportStatus.DRAFT : ReportStatus.SUBMITTED;
-    const reportDate = dto.reportDate ? new Date(dto.reportDate) : new Date();
-
-    // Prevent duplicate submission within 5 seconds
-    if (!dto.isDraft) {
-      const duplicateRecent = await prisma.dailyWorkReport.findFirst({
-        where: {
-          submittedById,
-          clientId: dto.clientId,
-          reportDate,
-          status: ReportStatus.SUBMITTED,
-          createdAt: {
-            gte: new Date(Date.now() - 5000),
-          },
-        },
-        include: {
-          client: true,
-          submittedBy: true,
-        },
+    // 2. Validate service belongs to client and authorized for employee
+    if (dto.serviceId) {
+      const clientService = await prisma.clientService.findFirst({
+        where: { clientId: dto.clientId, serviceId: dto.serviceId },
+        include: { assignedEmployees: true },
       });
-      if (duplicateRecent) {
-        return duplicateRecent;
+      if (!clientService) {
+        throw new AppError('The selected service is not part of this client account.', 400);
+      }
+      if (user && user.role === 'EMPLOYEE') {
+        const isAssignedToSvc =
+          clientService.assignedEmployeeId === submittedById ||
+          (clientService.assignedEmployees || []).some(
+            (ae: any) => ae.employeeId === submittedById && ae.isActive
+          ) ||
+          Boolean(
+            await prisma.task.findFirst({
+              where: { clientId: dto.clientId, serviceId: dto.serviceId, assignedToId: submittedById },
+            })
+          );
+        if (!isAssignedToSvc) {
+          throw new ForbiddenError('You are not assigned to this service for the selected client.');
+        }
       }
     }
 
-    const report = await prisma.dailyWorkReport.create({
-      data: {
-        reportDate,
-        submittedById,
-        clientId: dto.clientId,
-        taskId: dto.taskId,
-        serviceId: dto.serviceId,
-        workDescription: dto.workDescription,
-        workCompleted: dto.workCompleted,
-        workPending: dto.workPending,
-        hoursSpent: dto.hoursSpent,
-        issuesOrBlockers: dto.issuesOrBlockers,
-        nextAction: dto.nextAction,
-        status,
-        submittedAt: dto.isDraft ? null : new Date(),
-      },
-      include: {
-        client: true,
-        submittedBy: true,
-      },
+    // 3. Validate task belongs to client and assigned to employee
+    if (dto.taskId) {
+      const task = await prisma.task.findUnique({ where: { id: dto.taskId } });
+      if (!task || task.clientId !== dto.clientId) {
+        throw new AppError('The selected task does not belong to this client.', 400);
+      }
+      if (user && user.role === 'EMPLOYEE' && task.assignedToId !== submittedById) {
+        throw new ForbiddenError('You can only link tasks assigned directly to you.');
+      }
+    }
+
+    const status = dto.isDraft ? ReportStatus.DRAFT : ReportStatus.SUBMITTED;
+    const reportDate = dto.reportDate ? new Date(dto.reportDate) : new Date();
+
+    const rawCompleted = (dto.workCompleted || '').trim();
+    const rawDescription = (dto.workDescription || '').trim() || rawCompleted;
+
+    // Fast deduplication: only debounce if the exact same work description was submitted within 2 seconds
+    if (!dto.isDraft) {
+      const duplicateVeryRecent = await prisma.dailyWorkReport.findFirst({
+        where: {
+          submittedById,
+          clientId: dto.clientId,
+          workCompleted: rawCompleted,
+          status: ReportStatus.SUBMITTED,
+          createdAt: {
+            gte: new Date(Date.now() - 2000),
+          },
+        },
+        select: {
+          id: true,
+          reportDate: true,
+          submittedById: true,
+          clientId: true,
+          workCompleted: true,
+          status: true,
+          createdAt: true,
+        },
+      });
+      if (duplicateVeryRecent) {
+        return DailyReportService.getReportById(duplicateVeryRecent.id);
+      }
+    }
+
+    const hasCol = await DailyReportService.getHasQuantityColumn();
+
+    // If native column is not yet migrated, prepend deliverable badge tag to workCompleted
+    let formattedCompleted = rawCompleted;
+    if (!hasCol && dto.quantity !== undefined && dto.quantity !== null && !rawCompleted.startsWith('[')) {
+      const unitLabel = dto.unit ? ` ${dto.unit.trim()}` : '';
+      formattedCompleted = `[Deliverable: ${dto.quantity}${unitLabel}] ${rawCompleted}`;
+    }
+
+    const createData: any = {
+      reportDate,
+      submittedById,
+      clientId: dto.clientId,
+      taskId: dto.taskId || null,
+      serviceId: dto.serviceId || null,
+      workDescription: rawDescription,
+      workCompleted: formattedCompleted,
+      workPending: dto.workPending || null,
+      hoursSpent: dto.hoursSpent !== undefined && dto.hoursSpent !== null ? Number(dto.hoursSpent) : 0,
+      issuesOrBlockers: dto.issuesOrBlockers || null,
+      nextAction: dto.nextAction || null,
+      status,
+      submittedAt: dto.isDraft ? null : new Date(),
+    };
+
+    if (hasCol && dto.quantity !== undefined && dto.quantity !== null) {
+      createData.quantity = Number(dto.quantity);
+      createData.unit = dto.unit || null;
+    }
+
+    const selectFields: any = {
+      id: true,
+      reportDate: true,
+      submittedById: true,
+      clientId: true,
+      taskId: true,
+      serviceId: true,
+      workDescription: true,
+      workCompleted: true,
+      workPending: true,
+      hoursSpent: true,
+      issuesOrBlockers: true,
+      nextAction: true,
+      status: true,
+      submittedAt: true,
+      reviewerId: true,
+      reviewerComments: true,
+      reviewedAt: true,
+      isSelfReviewed: true,
+      createdAt: true,
+      updatedAt: true,
+      client: true,
+      submittedBy: true,
+      service: true,
+      task: true,
+    };
+
+    if (hasCol) {
+      selectFields.quantity = true;
+      selectFields.unit = true;
+    }
+
+    const report: any = await prisma.dailyWorkReport.create({
+      data: createData,
+      select: selectFields,
     });
 
     // Create initial history record
-    await prisma.dailyReportHistory.create({
-      data: {
-        reportId: report.id,
-        version: 1,
-        workDescription: dto.workDescription,
-        workCompleted: dto.workCompleted,
-        workPending: dto.workPending,
-        hoursSpent: dto.hoursSpent,
-        status,
-        modifiedById: submittedById,
-      },
-    });
+    const historyData: any = {
+      reportId: report.id,
+      version: 1,
+      workDescription: rawDescription,
+      workCompleted: formattedCompleted,
+      workPending: dto.workPending || null,
+      hoursSpent: dto.hoursSpent !== undefined && dto.hoursSpent !== null ? Number(dto.hoursSpent) : 0,
+      status,
+      modifiedById: submittedById,
+    };
+    if (hasCol && dto.quantity !== undefined && dto.quantity !== null) {
+      historyData.quantity = Number(dto.quantity);
+      historyData.unit = dto.unit || null;
+    }
+
+    try {
+      await prisma.dailyReportHistory.create({
+        data: historyData,
+        select: { id: true },
+      });
+    } catch {
+      // Non-blocking history record
+    }
 
     await AuditService.log({
       actorId: submittedById,
-      actorName: report.submittedBy.fullName,
-      actorEmail: report.submittedBy.email,
+      actorName: report.submittedBy?.fullName,
+      actorEmail: report.submittedBy?.email,
       action: dto.isDraft ? 'REPORT_SAVED_DRAFT' : 'REPORT_SUBMITTED',
       resourceType: 'DAILY_REPORT',
       resourceId: report.id,
@@ -274,7 +509,7 @@ export class DailyReportService {
       await DailyReportService.notifyAdminsForReport(report.id, false);
     }
 
-    return report;
+    return DailyReportService.normalizeReport(report);
   }
 
   /**
@@ -289,7 +524,7 @@ export class DailyReportService {
   ) {
     const existing = await prisma.dailyWorkReport.findUnique({ where: { id } });
     if (!existing) {
-      throw new AppError('Daily work report not found', 404);
+      throw new AppError('Client work report not found', 404);
     }
 
     if (userRole !== 'ADMIN' && existing.submittedById !== userId) {
@@ -301,6 +536,7 @@ export class DailyReportService {
     }
 
     const currentHistoryCount = await prisma.dailyReportHistory.count({ where: { reportId: id } });
+    const hasCol = await DailyReportService.getHasQuantityColumn();
 
     let shouldNotifyAdmin = false;
     let isRevision = false;
@@ -314,9 +550,14 @@ export class DailyReportService {
       if (dto.workDescription !== undefined) updateData.workDescription = dto.workDescription;
       if (dto.workCompleted !== undefined) updateData.workCompleted = dto.workCompleted;
       if (dto.workPending !== undefined) updateData.workPending = dto.workPending;
-      if (dto.hoursSpent !== undefined) updateData.hoursSpent = dto.hoursSpent;
+      if (dto.hoursSpent !== undefined) updateData.hoursSpent = dto.hoursSpent !== null ? Number(dto.hoursSpent) : 0;
       if (dto.issuesOrBlockers !== undefined) updateData.issuesOrBlockers = dto.issuesOrBlockers;
       if (dto.nextAction !== undefined) updateData.nextAction = dto.nextAction;
+
+      if (hasCol) {
+        if (dto.quantity !== undefined) updateData.quantity = dto.quantity !== null ? Number(dto.quantity) : null;
+        if (dto.unit !== undefined) updateData.unit = dto.unit || null;
+      }
 
       if (dto.isDraft === false && existing.status === ReportStatus.DRAFT) {
         updateData.status = ReportStatus.SUBMITTED;
@@ -335,19 +576,29 @@ export class DailyReportService {
       });
 
       // Save version history snapshot
-      await tx.dailyReportHistory.create({
-        data: {
-          reportId: id,
-          version: currentHistoryCount + 1,
-          workDescription: rep.workDescription,
-          workCompleted: rep.workCompleted,
-          workPending: rep.workPending,
-          hoursSpent: rep.hoursSpent,
-          status: rep.status,
-          reviewerComments: rep.reviewerComments,
-          modifiedById: userId,
-        },
-      });
+      const hist: any = {
+        reportId: id,
+        version: currentHistoryCount + 1,
+        workDescription: rep.workDescription,
+        workCompleted: rep.workCompleted,
+        workPending: rep.workPending,
+        hoursSpent: rep.hoursSpent,
+        status: rep.status,
+        reviewerComments: rep.reviewerComments,
+        modifiedById: userId,
+      };
+      if (hasCol && dto.quantity !== undefined) {
+        hist.quantity = dto.quantity !== null ? Number(dto.quantity) : null;
+        hist.unit = dto.unit || null;
+      }
+
+      try {
+        await tx.dailyReportHistory.create({
+          data: hist,
+        });
+      } catch {
+        // Non-blocking history record
+      }
 
       return rep;
     });
@@ -369,7 +620,7 @@ export class DailyReportService {
       ipAddress: meta?.ipAddress,
     });
 
-    return updated;
+    return DailyReportService.normalizeReport(updated);
   }
 
   /**
@@ -378,15 +629,14 @@ export class DailyReportService {
   static async submitDraft(id: string, userId: string, meta?: { ipAddress?: string }) {
     const existing = await prisma.dailyWorkReport.findUnique({ where: { id } });
     if (!existing) {
-      throw new AppError('Daily work report not found', 404);
+      throw new AppError('Client work report not found', 404);
     }
     if (existing.submittedById !== userId) {
       throw new AppError('You can only submit your own draft reports.', 403);
     }
 
     if (existing.status === ReportStatus.SUBMITTED) {
-      // Prevent duplicate notification or duplicate submission
-      return existing;
+      return DailyReportService.normalizeReport(existing);
     }
 
     if (existing.status === ReportStatus.APPROVED) {
@@ -416,12 +666,39 @@ export class DailyReportService {
       ipAddress: meta?.ipAddress,
     });
 
-    return updated;
+    return DailyReportService.normalizeReport(updated);
   }
 
   /**
-   * Review daily work report (Approve, Request Revision, Under Review)
-   * Tracks self review explicitly (`isSelfReviewed`)
+   * Add attachment / proof of work to a report
+   */
+  static async addAttachment(
+    reportId: string,
+    file: { fileName: string; fileUrl: string; fileType?: string; fileSize?: number },
+    userId: string,
+    userRole: string
+  ) {
+    const report = await prisma.dailyWorkReport.findUnique({ where: { id: reportId } });
+    if (!report) {
+      throw new NotFoundError('Report not found');
+    }
+    if (userRole !== 'ADMIN' && report.submittedById !== userId) {
+      throw new ForbiddenError('You can only attach files to your own reports');
+    }
+
+    return prisma.dailyReportAttachment.create({
+      data: {
+        reportId,
+        fileName: file.fileName,
+        fileUrl: file.fileUrl,
+        fileType: file.fileType || null,
+        fileSize: file.fileSize || null,
+      },
+    });
+  }
+
+  /**
+   * Review daily work report (Optional admin comment/feedback)
    */
   static async reviewReport(
     id: string,
@@ -435,7 +712,7 @@ export class DailyReportService {
       include: { submittedBy: true },
     });
     if (!existing) {
-      throw new AppError('Daily work report not found', 404);
+      throw new AppError('Client work report not found', 404);
     }
 
     const isSelfReviewed = existing.submittedById === reviewerId;
@@ -453,27 +730,31 @@ export class DailyReportService {
       });
 
       const currentCount = await tx.dailyReportHistory.count({ where: { reportId: id } });
-      await tx.dailyReportHistory.create({
-        data: {
-          reportId: id,
-          version: currentCount + 1,
-          workDescription: rep.workDescription,
-          workCompleted: rep.workCompleted,
-          workPending: rep.workPending,
-          hoursSpent: rep.hoursSpent,
-          status,
-          reviewerComments,
-          modifiedById: reviewerId,
-        },
-      });
+      try {
+        await tx.dailyReportHistory.create({
+          data: {
+            reportId: id,
+            version: currentCount + 1,
+            workDescription: rep.workDescription,
+            workCompleted: rep.workCompleted,
+            workPending: rep.workPending,
+            hoursSpent: rep.hoursSpent,
+            status,
+            reviewerComments,
+            modifiedById: reviewerId,
+          },
+        });
+      } catch {
+        // Non-blocking
+      }
 
       // Send in-app notification to report author if reviewer is different
       if (!isSelfReviewed) {
         await tx.notification.create({
           data: {
             userId: existing.submittedById,
-            title: status === ReportStatus.APPROVED ? 'Daily Report Approved' : 'Report Revision Requested',
-            message: `Your report for ${existing.reportDate.toISOString().slice(0, 10)} was ${status.toLowerCase().replace('_', ' ')}. Feedback: ${reviewerComments}`,
+            title: status === ReportStatus.APPROVED ? 'Client Report Acknowledged' : 'Report Feedback Added',
+            message: `Your report for ${existing.reportDate.toISOString().slice(0, 10)} was updated. Feedback: ${reviewerComments}`,
             type: 'REPORT',
             link: `/employee/my-reports?reportId=${existing.id}`,
           },
@@ -496,30 +777,14 @@ export class DailyReportService {
       ipAddress: meta?.ipAddress,
     });
 
-    return updated;
+    return DailyReportService.normalizeReport(updated);
   }
 
   /**
-   * Helper to notify active Admin(s) upon daily work report submission
+   * Helper to notify active Admin(s) upon client work report submission
    */
   static async notifyAdminsForReport(reportId: string, isRevision = false) {
-    const report = await prisma.dailyWorkReport.findUnique({
-      where: { id: reportId },
-      include: {
-        submittedBy: {
-          select: { id: true, fullName: true, email: true },
-        },
-        client: {
-          select: { id: true, companyName: true },
-        },
-        task: {
-          select: { id: true, title: true },
-        },
-        service: {
-          select: { id: true, name: true },
-        },
-      },
-    });
+    const report: any = await DailyReportService.getReportById(reportId);
 
     if (!report) return;
 
@@ -544,13 +809,14 @@ export class DailyReportService {
     const title = isRevision
       ? 'Revised Daily Work Report Submitted'
       : 'New Daily Work Report Submitted';
-    const message = `${employeeName} submitted a Daily Work Report for ${clientName}${contextSuffix}.`;
+    const cleanCompleted = report.workCompleted.replace(/^\[(?:Deliverable:[^\]]+)\]\s*/, '').slice(0, 80);
+    const message = `${employeeName} submitted a Daily Work Report for ${clientName}${contextSuffix}: "${cleanCompleted}".`;
     const link = `/admin/daily-reports?reportId=${report.id}`;
 
     for (const admin of activeAdmins) {
       if (admin.id === report.submittedById) continue;
 
-      // Prevent duplicate notification: check if a notification with this title and link was created within 30 seconds
+      // Prevent duplicate notification: check if a notification with this title and link was created within 5 seconds
       const existingNotif = await prisma.notification.findFirst({
         where: {
           userId: admin.id,
@@ -558,7 +824,7 @@ export class DailyReportService {
           title,
           type: 'REPORT',
           createdAt: {
-            gte: new Date(Date.now() - 30000),
+            gte: new Date(Date.now() - 5000),
           },
         },
       });
@@ -578,4 +844,3 @@ export class DailyReportService {
     }
   }
 }
-
